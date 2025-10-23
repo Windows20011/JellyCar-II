@@ -1,6 +1,4 @@
-name: Compile JellyCar II (C++ Multi-Repo Build)
-
-# Trigger for manual execution and testing
+name: JellyCar II build
 on:
   workflow_dispatch:
     inputs:
@@ -12,77 +10,78 @@ on:
         description: 'Target Configuration (Debug or Release)'
         default: 'Release'
         required: true
-      # You would replace the placeholder below with the actual, full path to the Andromeda-Lib repo
       andromeda_repo:
-        description: 'Andromeda-Lib Repository Path'
-        default: 'DrakonPL/Andromeda-Lib' 
+        description: 'Andromeda-Lib Repository (DrakonPL/Andromeda-Lib)'
+        default: 'DrakonPL/Andromeda-Lib'
         required: true
 
 jobs:
   build:
     runs-on: windows-latest
     
-    # Environment variables derived from inputs and a necessary constant
+    # Environment variables derived from inputs and logic
     env:
-      SOLUTION_FILE_NAME: JellyCar.sln
+      SOLUTION_FILE: JellyCar.sln
       PLATFORM: ${{ github.event.inputs.platform || 'x64' }}
       CONFIGURATION: ${{ github.event.inputs.configuration || 'Release' }}
-      # This is the path the JellyCar .vcxproj uses (4 levels up from the solution/project root)
-      ANDROMEDA_PATH: '..\..\..\..\Andromeda-Lib'
+      # Crucial: Define a clean build directory for the dependencies
+      ANDROMEDA_CLONE_PATH: 'ANDROMEDA_CLONED'
 
     steps:
     
-    # --- STEP 1: Setup Environment and Files ---
-    - name: Install MSVC Build Toolset
+    # 1. SETUP BUILD TOOLS
+    - name: Install MSVC Build Toolset (v142)
       uses: microsoft/setup-msbuild@v2 
       with:
-        # v142 corresponds to the Toolset version specified in the vcxproj
         msbuild-toolset: 'v142' 
 
-    # --- STEP 2: Clone Dependencies (Andromeda-Lib First) ---
-    # Andromeda must be cloned into a sibling directory four levels deep, 
-    # as dictated by the vcxproj file's include paths!
+    # 2. CLONE DEPENDENCY: Andromeda-Lib 
     - name: 1. Clone Andromeda-Lib Dependency
       uses: actions/checkout@v4
       with:
-        repository: DrakonPL/Andromeda-Lib # <--- Replacement happens here
-        path: 'Andromeda-Lib'
+        repository: ${{ github.event.inputs.andromeda_repo }}
+        path: ${{ env.ANDROMEDA_CLONE_PATH }}
         
-    # --- STEP 3: Clone JellyCar Source ---
-    - name: 2. Clone JellyCar-II Repository
+    # 3. CLONE SOURCE: JellyCar-II Repository
+    - name: 2. Clone JellyCar-II Source Code
       uses: actions/checkout@v4
       with:
-        path: 'JellyCar-Source' # Cloned to a folder where the build can be run from
-        
-    # --- STEP 4: Build Preparation ---
-    - name: Prepare Files for Compilation (in the new structure)
-      working-directory: 'JellyCar-Source'
+        path: JellyCar-Source # The folder containing the main JellyCar.sln
+
+    # 4. FIX RELATIVE PATHS FOR COMPILATION
+    - name: Pre-build Prep & Copy Assets
       run: |
-        # Rename files for MSBuild 
-        Move-Item JellyCar_sln.txt $env:SOLUTION_FILE_NAME
-        # The VCXPROJ often needs to be in a matching subdirectory; 
-        # for a clean repo, we put it right next to the .sln 
-        Move-Item JellyCar_vcxproj.txt JellyCar.vcxproj
+        # Ensure solution and project files are correctly named at the JellyCar root
+        Move-Item JellyCar_sln.txt JellyCar-Source/$env:SOLUTION_FILE
+        Move-Item JellyCar_vcxproj.txt JellyCar-Source/JellyCar.vcxproj
+
+        # ***CRITICAL: Copy Andromeda Lib into the expected directory structure***
+        # We assume the user structure looks like this for MSBuild to find the paths like 
+        # "..\\..\\..\\..\\Andromeda-Lib\\..." which the project file uses.
         
-    # --- STEP 5: Compile the Game ---
-    # The VcXProj expects a specific structure for Andromeda; 
-    # we copy the needed lib from the checkout step's root path.
-    - name: Copy Andromeda Lib (If built locally, else compile it)
+        # We must MOVE the cloned Andromeda repo so its structure resolves the ..\..\..\..\ path
+        Move-Item $env:ANDROMEDA_CLONE_PATH/Build JellyCar-Source/Build
+
+    # 5. BUILD DEPENDENCY: Build Andromeda.vcxproj First
+    - name: Build Andromeda Dependency (REQUIRED)
+      working-directory: 'JellyCar-Source\Build\Windows\Andromeda'
       run: |
-        # In a real scenario, this step would involve building Andromeda first 
-        # OR copying the necessary compiled lib (e.g., Andromeda.lib) into a directory
-        # that the main JellyCar.vcxproj expects. The simplest approach for testing is just to clone the full code and hope for the best.
-        
+        # Use the GUID of the Andromeda project {CDD70FEF-A453-450C-813C-E7ADFC640A24} 
+        # to ensure the build only targets this library first
+        msbuild Andromeda.vcxproj /t:Build /p:Configuration=$env:CONFIGURATION /p:Platform=Win32
+
+    # 6. COMPILE THE GAME: Build JellyCar Project
     - name: Compile JellyCar Project (Using MSBuild)
+      # Execution directory needs to be the Solution File root
       working-directory: 'JellyCar-Source'
       run: |
-        msbuild "$($env:SOLUTION_FILE_NAME)" /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
+        msbuild "$env:SOLUTION_FILE" /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
         
-    # --- STEP 6: Archive Result ---
+    # 7. ARCHIVE THE EXECUTABLE
     - name: Archive Compiled Executable
       uses: actions/upload-artifact@v4
       with:
         name: JellyCar-Build-${{ env.PLATFORM }}-${{ env.CONFIGURATION }}
-        # Assuming the executable is dropped into a simple configuration folder
+        # The probable final output path for the executable after successful linking:
         path: |
           JellyCar-Source\${{ env.CONFIGURATION }}\JellyCar.exe
