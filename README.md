@@ -1,10 +1,9 @@
+![JellyCar logo](https://static.wikia.nocookie.net/jellycar/images/9/91/Jellycarlogo.png/revision/latest?cb=20231007222847)
 
-![JellyCar logo](https://marcinp.xyz/jellycar/2020031417273500-DB1426D1DFD034027CECDE9C2DD914B8.jpg)
+## JellyCar is a great 2D game with soft body physics created by Walaber. 
+https://twitter.com/walaber
 
-## JellyCar is great 2d game with soft body physics created by Walaber https://twitter.com/walaber.
-
-This is homebrew version that I made with permission from original author for many platforms.
-(PC, PSP, Wii,PlayStation 3, PlayStation Vita, Nintendo Switch)
+This is homebrew version that I made with permission from original author for Windows.
 
 
 Current implemetation uses my library: [Andromeda-Lib](https://github.com/DrakonPL/Andromeda-Lib)
