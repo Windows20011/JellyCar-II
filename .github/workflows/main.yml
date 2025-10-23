@@ -1,4 +1,4 @@
-name: JellyCar II: No Balloons
+name: Bob the Builder
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
         default: 'Release'
         required: true
       andromeda_repo:
-        description: 'Andromeda-Lib Repository (e.g., DrakonPL/Andromeda-Lib)'
+        description: 'Andromeda-Lib Repository (DrakonPL/Andromeda-Lib)'
         default: 'DrakonPL/Andromeda-Lib'
         required: true
 
@@ -21,10 +21,8 @@ jobs:
     runs-on: windows-latest
     
     env:
-      SOLUTION_FILE: JellyCar.sln
       PLATFORM: ${{ github.event.inputs.platform || 'x64' }}
       CONFIGURATION: ${{ github.event.inputs.configuration || 'Release' }}
-      ANDROMEDA_CLONE_PATH: 'Andromeda-Lib'
 
     steps:
     
@@ -34,54 +32,41 @@ jobs:
       with:
         msbuild-toolset: 'v142' 
 
-    # 2. CLONE DEPENDENCY: Andromeda-Lib (Must be cloned into a path relative to the JellyCar Solution)
-    # The runner workspace will be D:\a\JellyCar-II\JellyCar-II
+    # 2. CLONE DEPENDENCY: Andromeda-Lib 
     - name: 1. Clone Andromeda-Lib Dependency
       uses: actions/checkout@v4
       with:
+        # Cloned into ./Andromeda-Lib
         repository: ${{ github.event.inputs.andromeda_repo }}
-        path: ${{ env.ANDROMEDA_CLONE_PATH }}
+        path: Andromeda-Lib
 
     # 3. CLONE SOURCE: JellyCar-II Repository
     - name: 2. Clone JellyCar-II Source Code
       uses: actions/checkout@v4
       with:
-        path: JellyCar-Source # Path is D:\a\JellyCar-II\JellyCar-II\JellyCar-Source
-
-    # 4. PREP & RESTRUCTURE
-    - name: Restructure Project Roots for Correct Linking
-      run: |
-        # THE CORE FIX: Move Andromeda's internal build directory into 
-        # the required relative path for the JellyCar Solution
+        # Cloned into ./JellyCar-Source
+        path: JellyCar-Source
         
-        # We need to move the cloned JellyCar contents one folder higher to create 
-        # the space for Andromeda-Lib/ to be correctly linked.
-
-        # Correcting the internal link problem based on the fact that your JellyCar SLN
-        # wants to link a project with the path "..\..\..\Andromeda-Lib\..."
-        
-        # Copy Andromeda's main contents into a known working spot
-        Move-Item ${{ env.ANDROMEDA_CLONE_PATH }}/Build JellyCar-Source/Build
-
-    # 5. BUILD DEPENDENCY: Build Andromeda.vcxproj First
-    - name: Build Andromeda Dependency (REQUIRED)
-      # Building the internal Andromeda Project first
-      working-directory: 'JellyCar-Source\Build\Windows\Andromeda'
+    # 4. CRITICAL PATHING: Building Andromeda first
+    - name: Build Andromeda Dependency Project
+      # The project path is directly copied from the solution file's GUID association:
+      # Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Andromeda", "..\..\..\Andromeda-Lib\Build\Windows\Andromeda\Andromeda.vcxproj"
+      working-directory: './Andromeda-Lib/Build/Windows/Andromeda'
       run: |
         msbuild Andromeda.vcxproj /t:Build /p:Configuration=$env:CONFIGURATION /p:Platform=Win32
 
-    # 6. COMPILE THE GAME: Build JellyCar Project
+    # 5. COMPILE THE GAME: Build JellyCar Project
     - name: Compile JellyCar Project
-      # Compiling the Solution at the root
-      working-directory: 'JellyCar-Source'
+      # Build the solution in the main source folder where it lives:
+      working-directory: './JellyCar-Source'
       run: |
-        msbuild $env:SOLUTION_FILE /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
+        msbuild JellyCar.sln /p:Configuration=$env:CONFIGURATION /p:Platform=$env:PLATFORM
         
-    # 7. ARCHIVE THE EXECUTABLE
+    # 6. ARCHIVE THE EXECUTABLE 
     - name: Archive Compiled Executable
       uses: actions/upload-artifact@v4
       with:
         name: JellyCar-Build-${{ env.PLATFORM }}-${{ env.CONFIGURATION }}
-        # Final output path from the JellyCar.vcxproj structure:
+        # The probable final output path for the executable after successful linking:
         path: |
-          JellyCar-Source\${{ env.CONFIGURATION }}\JellyCar.exe
+          JellyCar-Source/${{ env.CONFIGURATION }}/JellyCar.exe
